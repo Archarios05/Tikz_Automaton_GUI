@@ -5,18 +5,22 @@ import ReactFlow, {
   Controls,
   MiniMap,
   ConnectionMode,
-  Node,
   Edge,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
 import Toolbar from './components/Toolbar'
-import AutomatonStateNode from './components/nodes/AutomatonStateNode'
+import AutomatonStateNode from './components/nodes/AutomatonStateNodeNew'
+import AutomatonEdge from './components/edges/AutomatonEdge'
 import PropertyInspector from './components/PropertyInspector'
 import { useEditorStore } from './store/editorStore'
 
 const nodeTypes = {
   automatonState: AutomatonStateNode,
+}
+
+const edgeTypes = {
+  straight: AutomatonEdge,
 }
 
 const AutomatonEditor: React.FC = () => {
@@ -27,18 +31,17 @@ const AutomatonEditor: React.FC = () => {
     mode,
     showGrid,
     onNodesChange,
-    onEdgesChange,
-    addNode,
-    addEdgeConnection,
+    onEdgesChange,    addNode,
     selectNode,
     selectEdge,
+    pendingEdgeStart,
+    cancelPendingEdge,
   } = useEditorStore()
 
-  const onConnect = useCallback((connection: any) => {
-    if (mode === 'addEdge') {
-      addEdgeConnection(connection)
-    }
-  }, [mode, addEdgeConnection])
+  // エッジドラッグによる作成を無効化
+  const onConnect = useCallback(() => {
+    // エッジ編集モードでは何もしない
+  }, [])
 
   const onCanvasClick = useCallback((event: React.MouseEvent) => {
     if (mode === 'addNode' && reactFlowWrapper.current) {
@@ -48,12 +51,18 @@ const AutomatonEditor: React.FC = () => {
         y: event.clientY - reactFlowBounds.top - 30,
       }
       addNode(position)
-    }
-  }, [mode, addNode])
-
-  const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    selectNode(node.id)
-  }, [selectNode])
+    } else if (mode === 'addEdge' && pendingEdgeStart) {
+      // エッジ編集モード中にキャンバスをクリックしたらキャンセル
+      cancelPendingEdge()
+    }  }, [mode, addNode, pendingEdgeStart, cancelPendingEdge])
+  
+  // const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+  //   if (mode === 'addEdge') {
+  //     handleNodeClickForEdge(node.id)
+  //   } else {
+  //     selectNode(node.id)
+  //   }
+  // }, [mode, handleNodeClickForEdge, selectNode])
 
   const onEdgeClick = useCallback((_: React.MouseEvent, edge: Edge) => {
     selectEdge(edge.id)
@@ -70,21 +79,47 @@ const AutomatonEditor: React.FC = () => {
       <div className="flex-1 relative" ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
+          edges={edges}          onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
-          onNodeClick={onNodeClick}
+          // onNodeClick={onNodeClick} // ノードコンポーネント内で直接処理
           onEdgeClick={onEdgeClick}
           onPaneClick={onPaneClick}
           onClick={onCanvasClick}
           nodeTypes={nodeTypes}
-          connectionMode={ConnectionMode.Loose}
+          edgeTypes={edgeTypes}          connectionMode={ConnectionMode.Loose}
           fitView
           snapToGrid={true}
           snapGrid={[15, 15]}
-          className={mode === 'addNode' ? 'cursor-crosshair' : 'cursor-default'}
-        >
+          selectNodesOnDrag={false}
+          nodeDragThreshold={1}
+          className={mode === 'addNode' ? 'cursor-crosshair' : 'cursor-default'}>
+          <svg>
+            <defs>
+              <marker
+                id="arrow-forward"
+                markerWidth="12"
+                markerHeight="12"
+                refX="10"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M0,0 L0,6 L9,3 z" fill="#333333" />
+              </marker>
+              <marker
+                id="arrow-backward"
+                markerWidth="12"
+                markerHeight="12"
+                refX="2"
+                refY="3"
+                orient="auto"
+                markerUnits="strokeWidth"
+              >
+                <path d="M9,0 L9,6 L0,3 z" fill="#333333" />
+              </marker>
+            </defs>
+          </svg>
           {showGrid && <Background />}
           <Controls />
           <MiniMap 

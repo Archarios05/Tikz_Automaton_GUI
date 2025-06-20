@@ -188,6 +188,32 @@ const PropertyInspector: React.FC = () => {
                 <option value="on">線上</option>
               </select>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="direction">矢印の方向</Label>
+              <select
+                id="direction"
+                value={selectedEdge.data.direction}
+                onChange={(e) => updateEdge(selectedEdge.id, { direction: e.target.value as any })}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="forward">→ (順方向)</option>
+                <option value="backward">← (逆方向)</option>
+                <option value="bidirectional">↔ (双方向)</option>
+              </select>
+            </div>
+
+            {selectedEdge.data.direction === 'bidirectional' && (
+              <div className="space-y-2">
+                <Label htmlFor="reverseLabel">逆方向ラベル</Label>
+                <Input
+                  id="reverseLabel"
+                  value={selectedEdge.data.reverseLabel || ''}
+                  onChange={(e) => updateEdge(selectedEdge.id, { reverseLabel: e.target.value })}
+                  placeholder="逆方向のラベル（空の場合は同じラベル）"
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
