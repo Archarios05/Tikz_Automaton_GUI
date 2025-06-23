@@ -30,6 +30,13 @@ export type AutomatonEdge = Edge<AutomatonEdgeData>
 
 export type EditorMode = 'select' | 'addNode' | 'addEdge'
 
+export interface ToastMessage {
+  id: string
+  message: string
+  type: 'success' | 'warning' | 'error' | 'info'
+  duration?: number
+}
+
 interface EditorState {
   nodes: AutomatonNode[]
   edges: AutomatonEdge[]
@@ -40,6 +47,8 @@ interface EditorState {
   isPropertyInspectorOpen: boolean
   // エッジ編集用の一時状態
   pendingEdgeStart: string | null
+  // トースト通知
+  toasts: ToastMessage[]
 }
 
 interface EditorActions {
@@ -61,6 +70,13 @@ interface EditorActions {
   handleNodeClickForEdge: (nodeId: string) => void
   cancelPendingEdge: () => void
   exportToTikz: () => string
+  getBidirectionalEdgePairs: () => Array<{
+    forward: AutomatonEdge
+    backward: AutomatonEdge
+  }>
+  // トースト通知
+  showToast: (message: string, type?: 'success' | 'warning' | 'error' | 'info', duration?: number) => void
+  hideToast: (id: string) => void
 }
 
 const initialState: EditorState = {
@@ -115,6 +131,7 @@ const initialState: EditorState = {
   selectedEdgeId: null,
   isPropertyInspectorOpen: false,
   pendingEdgeStart: null,
+  toasts: [],
 }
 
 export const useEditorStore = create<EditorState & EditorActions>()(
@@ -226,12 +243,28 @@ export const useEditorStore = create<EditorState & EditorActions>()(
             data: { ...node.data, isStart: node.id === id },
           })),
         }))
-      },
-
-      handleNodeClickForEdge: (nodeId) => {
-        const { pendingEdgeStart, edges } = get()
+      },      handleNodeClickForEdge: (nodeId) => {
+        const { pendingEdgeStart, edges, showToast } = get()
 
         if (pendingEdgeStart) {
+          // 同じノードをクリックした場合（自己ループ防止）
+          if (pendingEdgeStart === nodeId) {
+            showToast('同じノード間にエッジを作成することはできません。', 'warning')
+            set({ pendingEdgeStart: null })
+            return
+          }
+
+          // 既に同じ方向のエッジが存在するかチェック
+          const existingEdge = edges.find(edge => 
+            edge.source === pendingEdgeStart && edge.target === nodeId
+          )
+
+          if (existingEdge) {
+            showToast('この方向のエッジは既に存在しています。', 'warning')
+            set({ pendingEdgeStart: null })
+            return
+          }
+
           // 既に始点が設定されている場合、エッジを追加
           const newEdge: AutomatonEdge = {
             id: `edge-${Date.now()}`,
@@ -259,6 +292,31 @@ export const useEditorStore = create<EditorState & EditorActions>()(
 
       cancelPendingEdge: () => {
         set({ pendingEdgeStart: null })
+      },
+
+      getBidirectionalEdgePairs: () => {
+        const { edges } = get()
+        const pairs: Array<{ forward: AutomatonEdge; backward: AutomatonEdge }> = []
+        const processedEdges = new Set<string>()
+
+        edges.forEach(edge => {
+          if (processedEdges.has(edge.id)) return
+
+          // 逆方向のエッジを探す
+          const reverseEdge = edges.find(e => 
+            e.source === edge.target && 
+            e.target === edge.source &&
+            !processedEdges.has(e.id)
+          )
+
+          if (reverseEdge) {
+            pairs.push({ forward: edge, backward: reverseEdge })
+            processedEdges.add(edge.id)
+            processedEdges.add(reverseEdge.id)
+          }
+        })
+
+        return pairs
       },
 
       exportToTikz: () => {
@@ -317,8 +375,20 @@ export const useEditorStore = create<EditorState & EditorActions>()(
         })
         
         tikzCode += '\\end{tikzpicture}'
-        
-        return tikzCode
+          return tikzCode
+      },
+
+      showToast: (message, type = 'info', duration = 3000) => {
+        const id = `toast-${Date.now()}-${Math.random()}`
+        set((state) => ({
+          toasts: [...state.toasts, { id, message, type, duration }]
+        }))
+      },
+
+      hideToast: (id) => {
+        set((state) => ({
+          toasts: state.toasts.filter(toast => toast.id !== id)
+        }))
       },
     }),
     {

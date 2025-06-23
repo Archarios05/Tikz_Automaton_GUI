@@ -6,13 +6,15 @@ import ReactFlow, {
   MiniMap,
   ConnectionMode,
   Edge,
+  useReactFlow,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
 import Toolbar from './components/Toolbar'
 import AutomatonStateNode from './components/nodes/AutomatonStateNodeNew'
-import AutomatonEdge from './components/edges/AutomatonEdge'
+import AutomatonEdgeNew from './components/edges/AutomatonEdgeNew'
 import PropertyInspector from './components/PropertyInspector'
+import Toast from './components/ui/Toast'
 import { useEditorStore } from './store/editorStore'
 
 const nodeTypes = {
@@ -20,11 +22,12 @@ const nodeTypes = {
 }
 
 const edgeTypes = {
-  straight: AutomatonEdge,
+  straight: AutomatonEdgeNew,
 }
 
 const AutomatonEditor: React.FC = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
+  const { project } = useReactFlow()
   const {
     nodes,
     edges,
@@ -36,25 +39,37 @@ const AutomatonEditor: React.FC = () => {
     selectEdge,
     pendingEdgeStart,
     cancelPendingEdge,
+    toasts,
+    hideToast,
   } = useEditorStore()
 
   // エッジドラッグによる作成を無効化
   const onConnect = useCallback(() => {
     // エッジ編集モードでは何もしない
   }, [])
-
   const onCanvasClick = useCallback((event: React.MouseEvent) => {
     if (mode === 'addNode' && reactFlowWrapper.current) {
+      // ReactFlowの座標変換を使用してクリック位置を正確に計算
       const reactFlowBounds = reactFlowWrapper.current.getBoundingClientRect()
-      const position = {
-        x: event.clientX - reactFlowBounds.left - 30, // Offset for node center
-        y: event.clientY - reactFlowBounds.top - 30,
+      const clientPosition = {
+        x: event.clientX - reactFlowBounds.left,
+        y: event.clientY - reactFlowBounds.top,
       }
-      addNode(position)
+      
+      // ReactFlowのproject関数でズーム・パンを考慮した座標に変換
+      const position = project(clientPosition)
+      
+      // ノードの中心がクリック位置になるように調整
+      const adjustedPosition = {
+        x: position.x - 30, // ノード幅の半分
+        y: position.y - 30, // ノード高さの半分
+      }
+      
+      addNode(adjustedPosition)
     } else if (mode === 'addEdge' && pendingEdgeStart) {
       // エッジ編集モード中にキャンバスをクリックしたらキャンセル
       cancelPendingEdge()
-    }  }, [mode, addNode, pendingEdgeStart, cancelPendingEdge])
+    }  }, [mode, addNode, pendingEdgeStart, cancelPendingEdge, project])
   
   // const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
   //   if (mode === 'addEdge') {
@@ -128,9 +143,18 @@ const AutomatonEditor: React.FC = () => {
               return nodeData?.isStart ? '#10b981' : '#6b7280'
             }}
             className="!bg-white !border !border-gray-300"
-          />
-        </ReactFlow>
+          />        </ReactFlow>
         <PropertyInspector />
+        {/* トースト通知 */}
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            message={toast.message}
+            type={toast.type}
+            duration={toast.duration}
+            onClose={() => hideToast(toast.id)}
+          />
+        ))}
       </div>
     </div>
   )
