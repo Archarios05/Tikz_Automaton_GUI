@@ -2,6 +2,70 @@ import { create } from 'zustand'
 import { temporal } from 'zundo'
 import { Node, Edge, Connection, applyNodeChanges, applyEdgeChanges, NodeChange, EdgeChange } from 'reactflow'
 
+// ノード間の向きと距離に基づいて双方向エッジの最適な角度を計算
+const calculateBidirectionalAngles = (sourceNode: AutomatonNode, targetNode: AutomatonNode) => {
+  const dx = targetNode.position.x - sourceNode.position.x
+  const dy = sourceNode.position.y - targetNode.position.y
+  const distance = Math.sqrt(dx * dx + dy * dy)
+  
+  // ノード間ベクトルの角度（TikZ基準: 東0°、反時計回り）
+  const baseAngle = Math.atan2(dy, dx) * 180 / Math.PI
+  
+  // 距離に応じた分離角度とlooseness
+  let separationAngle: number
+  let looseness: number
+  
+  if (distance < 150) {
+    separationAngle = 30  // 近距離：適度に分離（回り込まない）
+    looseness = 1.2
+  } else if (distance < 300) {
+    separationAngle = 25  // 中距離：適度に分離
+    looseness = 1.0
+  } else {
+    separationAngle = 20  // 長距離：緩やかに分離
+    looseness = 0.8
+  }
+  
+  // 正規化関数：角度を-180〜180度の範囲に調整
+  const normalizeAngle = (angle: number) => {
+    while (angle > 180) angle -= 360
+    while (angle < -180) angle += 360
+    return angle
+  }
+    // 第1エッジ（上側曲線）- ベクトルに対して+分離角度
+  const edge1Out = normalizeAngle(baseAngle + separationAngle)
+  const edge1In = normalizeAngle(baseAngle + 180 + separationAngle)  // 対称にするため同じ符号
+  
+  // 第2エッジ（下側曲線）- ベクトルに対して-分離角度（完全対称）
+  const edge2Out = normalizeAngle(baseAngle - separationAngle)
+  const edge2In = normalizeAngle(baseAngle + 180 - separationAngle)  // 対称にするため同じ符号
+  
+  return {
+    baseAngle,
+    edge1: { out: edge1Out, in: edge1In },
+    edge2: { out: edge2Out, in: edge2In },
+    separationAngle,
+    looseness,
+    distance
+  }
+}
+
+// 制御点オフセット計算（cm単位）
+const calculateControlOffset = (sourceNode: AutomatonNode, targetNode: AutomatonNode, separationCm = 0.5) => {
+  // ReactFlow coords to TikZ coords (invert Y)
+  const dx = (targetNode.position.x - sourceNode.position.x) / 80
+  const dy = (sourceNode.position.y - targetNode.position.y) / 80
+  const dist = Math.sqrt(dx*dx + dy*dy)
+  if (dist === 0) return { x: 0, y: 0 }
+  // 単位法線ベクトル
+  const ux = dx / dist
+  const uy = dy / dist
+  // 法線ベクトル（90°回転）
+  const px = -uy * separationCm
+  const py = ux * separationCm
+  return { x: px, y: py }
+}
+
 export interface AutomatonNodeData {
   label: string
   isAccepting: boolean
@@ -114,7 +178,8 @@ const initialState: EditorState = {
       id: 'sample-edge-1',
       source: 'sample-node-1',
       target: 'sample-node-2',
-      type: 'straight',      data: {
+      type: 'straight',
+      data: {
         label: 'a',
         bendDirection: 'none',
         loopDirection: 'above',
@@ -123,7 +188,21 @@ const initialState: EditorState = {
         lineStyle: 'solid',
       },
     },
-  ],  mode: 'select',
+    {
+      id: 'sample-edge-2',
+      source: 'sample-node-2',
+      target: 'sample-node-1',
+      type: 'straight',
+      data: {
+        label: 'b',
+        bendDirection: 'none',
+        loopDirection: 'above',
+        labelPosition: 'auto',
+        lineColor: '#333333',
+        lineStyle: 'solid',
+      },
+    },
+  ],mode: 'select',
   showGrid: true,
   selectedNodeId: null,
   selectedEdgeId: null,
@@ -321,12 +400,15 @@ export const useEditorStore = create<EditorState & EditorActions>()(
         })
 
         return pairs
-      },      exportToTikz: () => {
+      },
+
+      exportToTikz: () => {
         const { nodes, edges } = get()
         
         // TikZ automataライブラリの公式記法に準拠
         let tikzCode = '\\usetikzlibrary{automata,positioning}\n'
-        tikzCode += '\\begin{tikzpicture}[shorten >=1pt,node distance=2cm,on grid,auto]\n'
+        // shorten でノード境界上からエッジを開始・終了
+        tikzCode += '\\begin{tikzpicture}[shorten >=0.4cm,shorten <=0.4cm,node distance=2cm,on grid,auto]\n'
         
         // ノードを配置
         const sortedNodes = [...nodes].sort((a, b) => a.position.x + a.position.y - b.position.x - b.position.y)
@@ -351,10 +433,10 @@ export const useEditorStore = create<EditorState & EditorActions>()(
         // 双方向エッジペアを検出してbend設定を自動調整
         const bidirectionalPairs = get().getBidirectionalEdgePairs()
         const processedEdges = new Set<string>()
-        
-        // エッジを追加（公式記法）
+          // エッジを追加（公式記法）
         if (edges.length > 0) {
-          tikzCode += '  \\path[->]\n'
+          // ノード境界から少しオフセットして開始・終了、線を実際に描画
+          tikzCode += '  \\draw[->,shorten >=0.25cm,shorten <=0.25cm]\n'
           
           const edgeLines: string[] = []
           
@@ -380,28 +462,38 @@ export const useEditorStore = create<EditorState & EditorActions>()(
             )
             
             if (bidirectionalPair) {
-              // 双方向エッジの場合、自動的にbendを設定（片方がすでに処理されている場合はスキップ）
-              if (processedEdges.has(bidirectionalPair.forward.id) || processedEdges.has(bidirectionalPair.backward.id)) {
-                return
-              }
-              
               const forwardEdge = bidirectionalPair.forward
               const backwardEdge = bidirectionalPair.backward
-              
               const forwardLabel = forwardEdge.data?.label || ''
               const backwardLabel = backwardEdge.data?.label || ''
-              
-              // TikZ automataの公式例に倣い、上下または左右で対称に配置
-              if (forwardEdge.source < backwardEdge.source) {
-                edgeLines.push(`    (${forwardEdge.source}) edge [bend left] node {${forwardLabel}} (${forwardEdge.target})`)
-                edgeLines.push(`    (${backwardEdge.source}) edge [bend right] node [swap] {${backwardLabel}} (${backwardEdge.target})`)
+              const sourceNode = nodes.find(n => n.id === forwardEdge.source)
+              const targetNode = nodes.find(n => n.id === forwardEdge.target)
+              if (sourceNode && targetNode) {
+                // ノード間直線を中心線として法線方向にオフセット制御点を設定
+                const offset = calculateControlOffset(sourceNode, targetNode)
+                // 第1エッジ（+法線方向）
+                edgeLines.push(
+                  `    (${forwardEdge.source}) .. controls +(${offset.x.toFixed(2)},${offset.y.toFixed(2)}) and +(${offset.x.toFixed(2)},${offset.y.toFixed(2)}) .. node {${forwardLabel}} (${forwardEdge.target})`
+                )
+                // 第2エッジ（-法線方向）
+                edgeLines.push(
+                  `    (${backwardEdge.source}) .. controls +(${-offset.x.toFixed(2)},${-offset.y.toFixed(2)}) and +(${-offset.x.toFixed(2)},${-offset.y.toFixed(2)}) .. node [swap] {${backwardLabel}} (${backwardEdge.target})`
+                )
               } else {
-                edgeLines.push(`    (${forwardEdge.source}) edge [bend right] node [swap] {${forwardLabel}} (${forwardEdge.target})`)
-                edgeLines.push(`    (${backwardEdge.source}) edge [bend left] node {${backwardLabel}} (${backwardEdge.target})`)
+                // Fallback: 距離と角度ベース
+                const angles = calculateBidirectionalAngles(sourceNode!, targetNode!)
+                const sep = angles.separationAngle
+                const loose = angles.looseness
+                edgeLines.push(
+                  `    (${forwardEdge.source}) edge [bend left=${sep},looseness=${loose}] node {${forwardLabel}} (${forwardEdge.target})`
+                )
+                edgeLines.push(
+                  `    (${backwardEdge.source}) edge [bend right=${sep},looseness=${loose}] node [swap] {${backwardLabel}} (${backwardEdge.target})`
+                )
               }
-              
               processedEdges.add(forwardEdge.id)
               processedEdges.add(backwardEdge.id)
+              return
             } else {
               // 単方向エッジの場合
               let edgeOptions = ''
