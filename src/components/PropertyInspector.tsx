@@ -1,5 +1,5 @@
 import React from 'react'
-import { X } from 'lucide-react'
+import { X, Download } from 'lucide-react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -17,12 +17,20 @@ const PropertyInspector: React.FC = () => {
     updateEdge,
     isPropertyInspectorOpen,
     closePropertyInspector,
+    exportToTikz,
+    showToast,
   } = useEditorStore()
 
   const selectedNode = selectedNodeId ? nodes.find(n => n.id === selectedNodeId) : null
   const selectedEdge = selectedEdgeId ? edges.find(e => e.id === selectedEdgeId) : null
 
-  if (!isPropertyInspectorOpen || (!selectedNode && !selectedEdge)) {
+  const handleTikzExport = () => {
+    const tikzCode = exportToTikz()
+    navigator.clipboard.writeText(tikzCode)
+    showToast('TikZコードがクリップボードにコピーされました', 'success')
+  }
+
+  if (!isPropertyInspectorOpen) {
     return null
   }
 
@@ -146,8 +154,7 @@ const PropertyInspector: React.FC = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="bendDirection">曲がり方向</Label>
-              <select
+              <Label htmlFor="bendDirection">曲がり方向</Label>              <select
                 id="bendDirection"
                 value={selectedEdge.data.bendDirection}
                 onChange={(e) => updateEdge(selectedEdge.id, { bendDirection: e.target.value as any })}
@@ -156,7 +163,6 @@ const PropertyInspector: React.FC = () => {
                 <option value="none">直線</option>
                 <option value="left">左に曲げる</option>
                 <option value="right">右に曲げる</option>
-                <option value="loop">ループ</option>
               </select>
             </div>
 
@@ -186,36 +192,39 @@ const PropertyInspector: React.FC = () => {
                 <option value="above">上</option>
                 <option value="below">下</option>
                 <option value="on">線上</option>
-              </select>
-            </div>
+              </select>            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="direction">矢印の方向</Label>
-              <select
-                id="direction"
-                value={selectedEdge.data.direction}
-                onChange={(e) => updateEdge(selectedEdge.id, { direction: e.target.value as any })}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
-                <option value="forward">→ (順方向)</option>
-                <option value="backward">← (逆方向)</option>
-                <option value="bidirectional">↔ (双方向)</option>
-              </select>
-            </div>
-
-            {selectedEdge.data.direction === 'bidirectional' && (
+            {/* 自己ループの方向設定（自己ループの場合のみ表示） */}
+            {selectedEdge.source === selectedEdge.target && (
               <div className="space-y-2">
-                <Label htmlFor="reverseLabel">逆方向ラベル</Label>
-                <Input
-                  id="reverseLabel"
-                  value={selectedEdge.data.reverseLabel || ''}
-                  onChange={(e) => updateEdge(selectedEdge.id, { reverseLabel: e.target.value })}
-                  placeholder="逆方向のラベル（空の場合は同じラベル）"
-                />
-              </div>
-            )}
+                <Label htmlFor="loopDirection">ループ方向</Label>
+                <select
+                  id="loopDirection"
+                  value={selectedEdge.data.loopDirection}
+                  onChange={(e) => updateEdge(selectedEdge.id, { loopDirection: e.target.value as any })}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="above">上</option>
+                  <option value="below">下</option>
+                  <option value="left">左</option>
+                  <option value="right">右</option>
+                </select>
+              </div>            )}
           </div>
         )}
+        
+        {/* TikZエクスポートセクション */}
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <h4 className="font-medium text-gray-700 mb-4">エクスポート</h4>
+          <Button 
+            onClick={handleTikzExport}
+            className="w-full"
+            variant="outline"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            TikZコードをコピー
+          </Button>
+        </div>
       </div>
     </div>
   )

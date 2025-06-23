@@ -12,8 +12,9 @@ import 'reactflow/dist/style.css'
 
 import Toolbar from './components/Toolbar'
 import AutomatonStateNode from './components/nodes/AutomatonStateNodeNew'
-import AutomatonEdgeNew from './components/edges/AutomatonEdgeNew'
+import AutomatonEdge from './components/edges/AutomatonEdge'
 import PropertyInspector from './components/PropertyInspector'
+import TikzExportDialog from './components/TikzExportDialog'
 import Toast from './components/ui/Toast'
 import { useEditorStore } from './store/editorStore'
 
@@ -22,7 +23,8 @@ const nodeTypes = {
 }
 
 const edgeTypes = {
-  straight: AutomatonEdgeNew,
+  straight: AutomatonEdge,
+  selfLoop: AutomatonEdge,
 }
 
 const AutomatonEditor: React.FC = () => {
@@ -144,8 +146,7 @@ const AutomatonEditor: React.FC = () => {
             }}
             className="!bg-white !border !border-gray-300"
           />        </ReactFlow>
-        <PropertyInspector />
-        {/* トースト通知 */}
+        <PropertyInspector />        {/* トースト通知 */}
         {toasts.map((toast) => (
           <Toast
             key={toast.id}
@@ -155,6 +156,12 @@ const AutomatonEditor: React.FC = () => {
             onClose={() => hideToast(toast.id)}
           />
         ))}
+        
+        {/* TikZエクスポートダイアログ */}
+        <TikzExportDialog
+          isOpen={false} // 今回は既存の機能を活かすため、ダイアログは非表示
+          onClose={() => {}}
+        />
       </div>
     </div>
   )

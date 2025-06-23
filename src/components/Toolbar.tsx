@@ -13,15 +13,14 @@ import {
 } from 'lucide-react'
 
 const Toolbar: React.FC = () => {
-  const { mode, showGrid, setMode, toggleGrid, exportToTikz } = useEditorStore()
+  const { mode, showGrid, setMode, toggleGrid, exportToTikz, showToast } = useEditorStore()
   // Undo/Redo functionality would need to be implemented separately
   // const { undo, redo, pastStates, futureStates } = useTemporalStore(useEditorStore)
 
   const handleExport = () => {
     const tikzCode = exportToTikz()
     navigator.clipboard.writeText(tikzCode)
-    // You could also show a notification here
-    alert('TikZコードがクリップボードにコピーされました！')
+    showToast('TikZコードがクリップボードにコピーされました！', 'success')
   }
   const tools = [
     {

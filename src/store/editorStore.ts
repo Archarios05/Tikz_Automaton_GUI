@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { temporal } from 'zundo'
-import { Node, Edge, Connection, addEdge, applyNodeChanges, applyEdgeChanges, NodeChange, EdgeChange } from 'reactflow'
+import { Node, Edge, Connection, applyNodeChanges, applyEdgeChanges, NodeChange, EdgeChange } from 'reactflow'
 
 export interface AutomatonNodeData {
   label: string
@@ -15,13 +15,11 @@ export interface AutomatonNodeData {
 
 export interface AutomatonEdgeData {
   label: string
-  bendDirection: 'none' | 'left' | 'right' | 'loop'
+  bendDirection: 'none' | 'left' | 'right'
+  loopDirection: 'above' | 'below' | 'left' | 'right' // 自己ループの方向
   labelPosition: 'auto' | 'above' | 'below' | 'on'
   lineColor: string
   lineStyle: 'solid' | 'dashed' | 'dotted'
-  direction: 'forward' | 'backward' | 'bidirectional'
-  // 双方向エッジの場合の逆方向ラベル
-  reverseLabel?: string
   transition?: string // Optional transition property for edges
 }
 
@@ -119,10 +117,10 @@ const initialState: EditorState = {
       type: 'straight',      data: {
         label: 'a',
         bendDirection: 'none',
+        loopDirection: 'above',
         labelPosition: 'auto',
         lineColor: '#333333',
         lineStyle: 'solid',
-        direction: 'forward',
       },
     },
   ],  mode: 'select',
@@ -141,15 +139,22 @@ export const useEditorStore = create<EditorState & EditorActions>()(
 
       setMode: (mode) => set({ mode, pendingEdgeStart: null }),
 
-      toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),
-
-      addNode: (position) => {
+      toggleGrid: () => set((state) => ({ showGrid: !state.showGrid })),      addNode: (position) => {
+        const { nodes, showToast } = get()
+        const newLabel = `q${nodes.length}`
+        
+        // 同じラベルのノードが既に存在するかチェック
+        const existingNode = nodes.find(node => node.data.label === newLabel)
+        if (existingNode) {
+          showToast(`ラベル "${newLabel}" のノードは既に存在します。`, 'warning')
+        }
+        
         const newNode: AutomatonNode = {
           id: `node-${Date.now()}`,
           type: 'automatonState',
           position,
           data: {
-            label: `q${get().nodes.length}`,
+            label: newLabel,
             isAccepting: false,
             isInitial: false,
             isStart: false,
@@ -182,14 +187,13 @@ export const useEditorStore = create<EditorState & EditorActions>()(
           const newEdge: AutomatonEdge = {
             id: `edge-${Date.now()}`,
             source: connection.source,
-            target: connection.target,
-            type: isLoop ? 'selfLoop' : 'straight',            data: {
+            target: connection.target,            type: isLoop ? 'selfLoop' : 'straight',            data: {
               label: '',
-              bendDirection: isLoop ? 'loop' : 'none',
+              bendDirection: 'none',
+              loopDirection: 'above',
               labelPosition: 'auto',
               lineColor: '#333333',
               lineStyle: 'solid',
-              direction: 'forward',
             },
           }
           set((state) => ({ edges: [...state.edges, newEdge] }))
@@ -247,13 +251,6 @@ export const useEditorStore = create<EditorState & EditorActions>()(
         const { pendingEdgeStart, edges, showToast } = get()
 
         if (pendingEdgeStart) {
-          // 同じノードをクリックした場合（自己ループ防止）
-          if (pendingEdgeStart === nodeId) {
-            showToast('同じノード間にエッジを作成することはできません。', 'warning')
-            set({ pendingEdgeStart: null })
-            return
-          }
-
           // 既に同じ方向のエッジが存在するかチェック
           const existingEdge = edges.find(edge => 
             edge.source === pendingEdgeStart && edge.target === nodeId
@@ -265,21 +262,28 @@ export const useEditorStore = create<EditorState & EditorActions>()(
             return
           }
 
+          // 自己ループの場合は特別なタイプを設定
+          const isLoop = pendingEdgeStart === nodeId
+          
           // 既に始点が設定されている場合、エッジを追加
           const newEdge: AutomatonEdge = {
             id: `edge-${Date.now()}`,
             source: pendingEdgeStart,
             target: nodeId,
-            type: 'straight',
-            data: {
+            type: isLoop ? 'selfLoop' : 'straight',            data: {
               label: '',
               bendDirection: 'none',
+              loopDirection: 'above',
               labelPosition: 'auto',
               lineColor: '#333333',
               lineStyle: 'solid',
-              direction: 'forward',
             },
           }
+          
+          if (isLoop) {
+            showToast('自己ループ遷移が追加されました。', 'success')
+          }
+          
           set((state) => ({
             edges: [...state.edges, newEdge],
             pendingEdgeStart: null, // エッジ追加後は始点をクリア
@@ -317,65 +321,114 @@ export const useEditorStore = create<EditorState & EditorActions>()(
         })
 
         return pairs
-      },
-
-      exportToTikz: () => {
+      },      exportToTikz: () => {
         const { nodes, edges } = get()
         
-        let tikzCode = '\\begin{tikzpicture}[shorten >=1pt,node distance=2cm,on grid,auto]\n'
-          // Add nodes
-        nodes.forEach((node) => {
+        // TikZ automataライブラリの公式記法に準拠
+        let tikzCode = '\\usetikzlibrary{automata,positioning}\n'
+        tikzCode += '\\begin{tikzpicture}[shorten >=1pt,node distance=2cm,on grid,auto]\n'
+        
+        // ノードを配置
+        const sortedNodes = [...nodes].sort((a, b) => a.position.x + a.position.y - b.position.x - b.position.y)
+        
+        sortedNodes.forEach((node) => {
           const { label, isAccepting, isInitial, isStart } = node.data
-          const position = `(${node.position.x / 50},${-node.position.y / 50})`
           
-          let nodeType = 'state'
-          if (isAccepting) nodeType = 'state,accepting'
-          if (isInitial) nodeType = 'state,initial'
-          if (isStart) nodeType = 'state,initial'
+          // ノードタイプの決定（公式記法）
+          let nodeOptions = ['state']
+          if (isAccepting) nodeOptions.push('accepting')
+          if (isInitial || isStart) nodeOptions.push('initial')
           
-          tikzCode += `  \\node[${nodeType}] (${node.id}) at ${position} {${label}};\n`
+          // 座標を適切なスケールに変換（グリッドに合わせる）
+          const position = `(${(node.position.x / 80).toFixed(1)},${(-node.position.y / 80).toFixed(1)})`
+          const nodeLabel = label || node.id
+          
+          tikzCode += `  \\node[${nodeOptions.join(',')}] (${node.id}) at ${position} {$${nodeLabel}$};\n`
         })
         
-        tikzCode += '\n'        // Add edges
-        edges.forEach((edge) => {
-          if (!edge.data) return
-          const { label, bendDirection, direction, reverseLabel } = edge.data
-          const source = edge.source
-          const target = edge.target
+        tikzCode += '\n'
+        
+        // 双方向エッジペアを検出してbend設定を自動調整
+        const bidirectionalPairs = get().getBidirectionalEdgePairs()
+        const processedEdges = new Set<string>()
+        
+        // エッジを追加（公式記法）
+        if (edges.length > 0) {
+          tikzCode += '  \\path[->]\n'
           
-          let edgeOptions = ''
-          if (bendDirection === 'left') edgeOptions = '[bend left]'
-          else if (bendDirection === 'right') edgeOptions = '[bend right]'
-          else if (bendDirection === 'loop') edgeOptions = '[loop above]'
+          const edgeLines: string[] = []
           
-          if (direction === 'bidirectional') {
-            // 双方向の場合は二本の矢印として出力
-            // 順方向
-            const forwardOptions = bendDirection === 'left' ? '[bend left]' : 
-                                 bendDirection === 'right' ? '[bend right]' : ''
-            tikzCode += `  \\path[->] (${source}) edge ${forwardOptions} node {${label}} (${target});\n`
+          edges.forEach((edge) => {
+            if (!edge.data || processedEdges.has(edge.id)) return
             
-            // 逆方向
-            const backwardOptions = bendDirection === 'left' ? '[bend right]' : 
-                                  bendDirection === 'right' ? '[bend left]' : 
-                                  bendDirection === 'none' ? '[bend left]' : ''
-            const backwardLabel = reverseLabel || label
-            tikzCode += `  \\path[->] (${target}) edge ${backwardOptions} node {${backwardLabel}} (${source});\n`
-          } else {
-            // 単方向の場合
-            let arrowDirection = '->'
-            if (direction === 'backward') arrowDirection = '<-'
+            const { label, bendDirection, loopDirection } = edge.data
+            const source = edge.source
+            const target = edge.target
             
+            // 自己ループの場合
             if (source === target) {
-              tikzCode += `  \\path[${arrowDirection}] (${source}) edge ${edgeOptions} node {${label}} (${target});\n`
-            } else {
-              tikzCode += `  \\path[${arrowDirection}] (${source}) edge ${edgeOptions} node {${label}} (${target});\n`
+              const loopDir = loopDirection || 'above'
+              const edgeLabel = label || ''
+              edgeLines.push(`    (${source}) edge [loop ${loopDir}] node {${edgeLabel}} ()`)
+              processedEdges.add(edge.id)
+              return
             }
+            
+            // 双方向エッジペアかチェック
+            const bidirectionalPair = bidirectionalPairs.find(pair => 
+              pair.forward.id === edge.id || pair.backward.id === edge.id
+            )
+            
+            if (bidirectionalPair) {
+              // 双方向エッジの場合、自動的にbendを設定（片方がすでに処理されている場合はスキップ）
+              if (processedEdges.has(bidirectionalPair.forward.id) || processedEdges.has(bidirectionalPair.backward.id)) {
+                return
+              }
+              
+              const forwardEdge = bidirectionalPair.forward
+              const backwardEdge = bidirectionalPair.backward
+              
+              const forwardLabel = forwardEdge.data?.label || ''
+              const backwardLabel = backwardEdge.data?.label || ''
+              
+              // TikZ automataの公式例に倣い、上下または左右で対称に配置
+              if (forwardEdge.source < backwardEdge.source) {
+                edgeLines.push(`    (${forwardEdge.source}) edge [bend left] node {${forwardLabel}} (${forwardEdge.target})`)
+                edgeLines.push(`    (${backwardEdge.source}) edge [bend right] node [swap] {${backwardLabel}} (${backwardEdge.target})`)
+              } else {
+                edgeLines.push(`    (${forwardEdge.source}) edge [bend right] node [swap] {${forwardLabel}} (${forwardEdge.target})`)
+                edgeLines.push(`    (${backwardEdge.source}) edge [bend left] node {${backwardLabel}} (${backwardEdge.target})`)
+              }
+              
+              processedEdges.add(forwardEdge.id)
+              processedEdges.add(backwardEdge.id)
+            } else {
+              // 単方向エッジの場合
+              let edgeOptions = ''
+              let nodeOptions = ''
+              
+              if (bendDirection === 'left') {
+                edgeOptions = ' [bend left]'
+              } else if (bendDirection === 'right') {
+                edgeOptions = ' [bend right]'
+                nodeOptions = ' [swap]'
+              }
+              
+              const edgeLabel = label || ''
+              edgeLines.push(`    (${source}) edge${edgeOptions} node${nodeOptions} {${edgeLabel}} (${target})`)
+              processedEdges.add(edge.id)
+            }
+          })
+          
+          // エッジラインを結合
+          tikzCode += edgeLines.join('\n')
+          if (edgeLines.length > 0) {
+            tikzCode += ';\n'
           }
-        })
+        }
         
         tikzCode += '\\end{tikzpicture}'
-          return tikzCode
+        return tikzCode
       },
 
       showToast: (message, type = 'info', duration = 3000) => {
