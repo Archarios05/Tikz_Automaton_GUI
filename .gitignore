@@ -1,2 +1,4 @@
 node_modules
 report2/
+dist/
+verify-out/

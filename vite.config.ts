@@ -1,14 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import path from 'path'
-import { fileURLToPath, URL } from 'node:url'
 
-// https://vitejs.dev/config/
+// base: './' so the build works from any sub-path (e.g. GitHub Pages)
 export default defineConfig({
+  base: './',
   plugins: [react()],
-  resolve: {
-    alias: {
-      "@": fileURLToPath(new URL('./src', import.meta.url)),
-    },
-  },
 })

@@ -1,121 +1,80 @@
-# TikZ Automaton GUI - ビジュアル・オートマトンエディタ
+# TikZ Automaton Editor
 
-![TikZ Automaton GUI](./preview.png)
+LaTeX の TikZ `automata` ライブラリで描くオートマトン（状態遷移図）を、**コンパイル結果と同じ見た目のまま** GUI で編集し、TikZ コードとして出力する Web アプリです。
 
-## 概要
+## 特徴
 
-TikZ Automaton GUIは、LaTeXのTikZ automataライブラリの機能をプログラミング知識のないユーザーでも直感的かつグラフィカルに利用できるWebアプリケーションです。ユーザーはキャンバス上でノード（状態）やエッジ（遷移）を直接操作することにより、最終的にTikZコードとして出力可能なオートマトンを視覚的に構築できます。
-このプロジェクトは主にGemini2.5、ClaudeSonnet4を用いて作成されました。
-
-## 主な機能
-
-### ✨ 直感的な操作
-- **選択モード (V)**: オブジェクトの選択、移動、編集
-- **ノード追加モード (N)**: クリックでノード（状態）を追加
-- **エッジ追加モード (E)**: ドラッグ&ドロップでエッジ（遷移）を追加
-
-### 🎨 豊富なカスタマイズ
-- **ノード設定**: ラベル、色、サイズ、状態タイプ（受理状態、初期状態、開始点）
-- **エッジ設定**: ラベル、線の色・スタイル、曲がり方向、ラベル位置
-- **リアルタイムプレビュー**: 変更がすぐに反映
-
-### 🔧 強力な編集機能
-- **Undo/Redo (Ctrl+Z/Y)**: 完全な操作履歴
-- **右クリックメニュー**: 素早い設定変更とプロパティアクセス
-- **プロパティインスペクタ**: 詳細な設定パネル
-- **グリッド表示 (Ctrl+G)**: 正確な配置のためのガイド
-
-### 📤 TikZエクスポート
-- **ワンクリックエクスポート**: 作成したオートマトンをTikZコードとして出力
-- **クリップボードコピー**: すぐにLaTeX文書に貼り付け可能
-
-## 技術スタック
-
-- **React 18** + **TypeScript**: モダンなUI開発
-- **React Flow**: ノードベースのビジュアルエディタ
-- **Zustand + Zundo**: 軽量な状態管理とUndo/Redo
-- **Shadcn/ui + Radix UI**: 高品質でアクセシブルなUIコンポーネント
-- **Tailwind CSS**: 効率的なスタイリング
-- **Lucide React**: 美しいアイコン
-- **Vite**: 高速な開発環境
-
-## インストールと起動
-
-```bash
-# 依存関係をインストール
-npm install
-
-# 開発サーバーを起動
-npm run dev
-
-# ブラウザで http://localhost:5173 にアクセス
-```
-
-## プロダクションビルド
-
-```bash
-# プロダクション用にビルド
-npm run build
-
-# ビルド結果をプレビュー
-npm run preview
-```
+- **TikZ と同一の見た目で編集** — キャンバスは TikZ / pgf のソースどおりに計算して描画しています。
+  - 状態の円の大きさ（`minimum size=2.5em`, `inner sep`、ラベル幅に応じた拡大）
+  - `accepting`（`double`）の二重線、`initial` 矢印と `start` テキスト
+  - `bend left/right=θ` の曲線（制御点 0.3915×距離）、`loop above/below/left/right`
+  - `auto` / `swap` によるラベル位置（8 方向アンカーの選択規則まで再現）
+  - `shorten >=1pt` と矢印 `Stealth` / `Latex` / `to` の形状・位置
+  - ラベルは KaTeX（Computer Modern）で描画し、TeX と同じ幅・高さ・深さで配置。添字は cmr7/cmmi7 の字幅も再現
+- **グリッドスナップの ON/OFF** — ツールバーまたは `G` キーで切り替え。間隔は 0.1 / 0.25 / 0.5 / 1 cm。
+  `Alt` を押しながらドラッグすると一時的に反転。OFF のときは 0.01 cm 単位（出力コードと同じ精度）で配置されます。
+- 座標は TikZ と同じ cm 単位で保持し、そのまま `\node ... at (x, y)` として出力
+- Undo/Redo、コピー＆ペースト、複数選択、ドラッグで曲げ角度・ループ向きを変更
+- 自動保存（ブラウザの localStorage）、JSON での保存・読み込み、`.tex` ダウンロード
 
 ## 使い方
 
-### 基本操作
-
-1. **ノードの追加**: ツールバーのノード追加ボタン (🔵) をクリックし、キャンバス上の任意の場所をクリック
-2. **エッジの追加**: エッジ追加ボタン (🔗) をクリックし、ノード間をドラッグ&ドロップ
-3. **選択と編集**: 選択モード (👆) でオブジェクトをクリックして選択、ダブルクリックでラベル編集
-4. **プロパティ設定**: 右クリックメニューから「プロパティ...」を選択
-
-### キーボードショートカット
-
-- **V**: 選択モード
-- **N**: ノード追加モード
-- **E**: エッジ追加モード
-- **Ctrl+Z**: Undo
-- **Ctrl+Y**: Redo
-- **Ctrl+G**: グリッド表示切替
-- **Space + ドラッグ**: キャンバスの移動
-- **マウスホイール**: ズーム
-
-### TikZエクスポート
-
-1. ツールバーのエクスポートボタン (📤) をクリック
-2. TikZコードがクリップボードにコピーされます
-3. LaTeX文書の`tikzpicture`環境内に貼り付けて使用
-
-```latex
-\documentclass{article}
-\usepackage{tikz}
-\usetikzlibrary{automata,positioning}
-
-\begin{document}
-% ここにエクスポートしたコードを貼り付け
-\begin{tikzpicture}[shorten >=1pt,node distance=2cm,on grid,auto]
-  \node[state,initial] (q0) at (0,0) {q0};
-  \node[state,accepting] (q1) at (2,0) {q1};
-  \path[->] (q0) edge node {a} (q1);
-\end{tikzpicture}
-\end{document}
+```bash
+npm install
+npm run dev     # http://localhost:5173
+npm run build   # dist/ に静的ファイルを出力
 ```
 
-## 開発への貢献
+| 操作 | 内容 |
+| --- | --- |
+| `V` / `S` / `T` | 選択 / 状態追加 / 遷移追加 ツール |
+| 空白をダブルクリック | 状態を追加 |
+| 遷移ツールで状態→状態へドラッグ（またはクリック→クリック） | 遷移を追加（同じ状態ならループ） |
+| 遷移をドラッグ | 曲げ角度（ループは向き）を変更 |
+| `G` / `Shift+G` | スナップ ON/OFF / グリッド表示 |
+| `A` / `I` | 受理状態 / 初期状態を切り替え |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | 元に戻す / やり直す |
+| `Ctrl+ホイール`、`Space+ドラッグ` | ズーム、画面移動 |
 
-1. このリポジトリをフォーク
-2. フィーチャーブランチを作成 (`git checkout -b feature/amazing-feature`)
-3. 変更をコミット (`git commit -m 'Add some amazing feature'`)
-4. ブランチにプッシュ (`git push origin feature/amazing-feature`)
-5. プルリクエストを作成
+ラベルは TeX の数式モードで入力します（例: `q_0`, `a,b`, `\varepsilon`）。
 
-## ライセンス
+### 出力されるコード
 
-このプロジェクトはMITライセンスの下で公開されています。詳細は[LICENSE](LICENSE)ファイルを参照してください。
+```latex
+% \usepackage{tikz}  \usetikzlibrary{automata, arrows.meta}
+\begin{tikzpicture}[->, >={Stealth}, shorten >=1pt, auto, semithick]
+  \node[state, initial] (q0) at (0, 0) {$q_{0}$};
+  \node[state, accepting] (q1) at (3, 0) {$q_{1}$};
 
-## 参考資料
+  \path (q0) edge [bend left=30] node {$a$} (q1)
+        (q1) edge [bend left=30] node {$b$} (q0)
+        (q1) edge [loop above] node {$a,b$} ();
+\end{tikzpicture}
+```
 
-- [TikZ automata documentation](https://tikz.dev/library-automata)
-- [React Flow documentation](https://reactflow.dev/)
-- [Shadcn/ui components](https://ui.shadcn.com/)
+「文書全体」にチェックを入れると `standalone` クラスの完全な文書として出力します（LaTeX 標準の 10pt を前提）。
+
+## 描画の検証
+
+TeX Live（`pdflatex`, `pdftocairo`）があれば、実際の TikZ 出力とキャンバス描画を重ねて比較できます。
+
+```bash
+npm run verify   # src/verify/samples.ts の図を pdflatex でコンパイルし verify-out/ に SVG 化
+npm run dev      # http://localhost:5173/verify.html?s=stealth&mode=diff
+```
+
+`mode=diff` は差分（一致していれば白）、`overlay` は重ね表示、`mine` / `ref` は単体表示です。
+
+## 構成
+
+```
+src/
+  model/      データモデル（cm 単位・TikZ の向き）と単位変換
+  tikz/       geometry.ts: TikZ の描画計算の再実装 / export.ts: コード生成 / colors.ts: xcolor
+  tex/        KaTeX によるラベル描画と TeX 寸法の計測
+  canvas/     DiagramLayer（TikZ と同じ描画）と Canvas（編集操作）
+  store/      zustand ストア（履歴・自動保存）
+  ui/         ツールバー・プロパティ・コード表示
+```
+
+技術: React 18, TypeScript, Vite, Zustand, KaTeX, Tailwind CSS
